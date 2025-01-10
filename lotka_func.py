@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from itertools import product
 
 
@@ -7,7 +8,7 @@ from itertools import product
 def load_csv_data(file_path):
     try:
         data = pd.read_csv(file_path)
-        if 'date' in data.columns and 'lapin' in data.columns and 'renard' in data.columns:
+        if {'date', 'lapin', 'renard'}.issubset(data.columns):
             return data['date'].values, data['lapin'].values, data['renard'].values
         else:
             raise ValueError(
@@ -16,43 +17,78 @@ def load_csv_data(file_path):
         raise IOError(f"Erreur lors du chargement du fichier CSV : {e}")
 
 
+# Fonction pour simuler la dynamique des populations
+def simulate_population_dynamics(alpha, beta, delta, gamma, time, step, n_iterations, lapin_sim, renard_sim):
+    for _ in range(n_iterations):
+        dlapin_dt = lapin_sim[-1] * \
+            (alpha - beta * renard_sim[-1]) * step + lapin_sim[-1]
+        drenard_dt = renard_sim[-1] * \
+            (delta * lapin_sim[-1] - gamma) * step + renard_sim[-1]
+
+        time.append(time[-1] + step)
+        lapin_sim.append(max(0, dlapin_dt))
+        renard_sim.append(max(0, drenard_dt))
+
+    return time, lapin_sim, renard_sim
+
+
 # Fonction pour calculer la MSE
-def calculate_mse(real_lapin, real_renard, simulated_lapin, simulated_renard):
-    try:
-        mse_lapin = np.mean((real_lapin - simulated_lapin) ** 2)
-        mse_renard = np.mean((real_renard - simulated_renard) ** 2)
-        return mse_lapin, mse_renard
-    except Exception as e:
-        raise ValueError(f"Erreur dans le calcul du MSE : {e}")
+def calculate_mse_for_params(lapin_real, renard_real, lapin_sim, renard_sim, time, step, alpha, beta, delta, gamma, n_iterations):
+    time, lapin_sim, renard_sim = simulate_population_dynamics(
+        alpha, beta, delta, gamma, time, step, n_iterations, lapin_sim, renard_sim)
+
+    time = np.array(time)
+    time = time[:1000]
+    lapin_sim = np.array(lapin_sim) * 1000
+    renard_sim = np.array(renard_sim) * 1000
+
+    step_ratio = max(1, len(lapin_sim) // len(lapin_real))
+    lapin_resized = lapin_sim[::step_ratio][:len(lapin_real)]
+    renard_resized = renard_sim[::step_ratio][:len(renard_real)]
+
+    mse_lapin = np.mean((lapin_real - lapin_resized) ** 2)
+    mse_renard = np.mean((renard_real - renard_resized) ** 2)
+
+    return mse_lapin, mse_renard, lapin_resized, renard_resized, np.array(time)
 
 
-# Fonction pour résoudre le modèle de Lotka-Volterra
-def solve_lotka_volterra(f, t_span, y0, params, dt=0.01):
-
-    t = np.arange(t_span[0], t_span[1], dt)
-    y = np.zeros((len(t), len(y0)))
-    y[0] = y0
-
-    for i in range(1, len(t)):
-        derivatives = f(t[i-1], y[i-1], *params)
-        y[i] = y[i-1] + dt * derivatives
-
-    return t, y
-
-
-# Fonction pour résoudre le modèle de Lotka-Volterra
-def optimize_parameters(real_data, t_span, initial_conditions):
-    param_values = [1/3, 2/3, 1, 4/3]
-    best_mse = float('inf')
+# Fonction pour optimiser les paramètres
+def optimize_params(lapin_real, renard_real, lapin_sim, renard_sim, time, step, n_iterations, alpha_values, beta_values, delta_values, gamma_values):
     best_params = None
+    lowest_mse = float('inf')
 
-    for alpha, beta, gamma, delta in product(param_values, repeat=4):
-        params = (alpha, beta, gamma, delta)
-        _, simulated_data = solve_lotka_volterra(
-            params, t_span, initial_conditions)
+    for alpha, beta, delta, gamma in product(alpha_values, beta_values, delta_values, gamma_values):
+        mse_lapin, mse_renard, lapin_resized, renard_resized, new_time = calculate_mse_for_params(
+            lapin_real, renard_real, lapin_sim, renard_sim, time, step, alpha, beta, delta, gamma, n_iterations)
+        mse = mse_lapin + mse_renard
+        if mse < lowest_mse:
+            lowest_mse = mse
+            best_params = (alpha, beta, delta, gamma)
+            mse_params = (lowest_mse, mse_lapin, mse_renard)
 
-        mse = calculate_mse(real_data, simulated_data)
-        if mse < best_mse:
-            best_mse = mse
-            best_params = params
-    return best_params, best_mse
+    return best_params, mse_params, lapin_resized, renard_resized, new_time
+
+
+# Fonction d'affichage des résultats de simulation
+def plot_results(time_real, lapin_real, renard_real, lapin_resized, renard_resized):
+
+    plt.figure(figsize=(15, 6))
+
+    # Graphique des lapins
+    plt.plot(time_real, lapin_real, label='Lapins (Réel)',
+             color='cyan', linewidth=2)
+    plt.plot(time_real, lapin_resized, label='Lapins (Simulé)',
+             color='blue', linestyle='--')
+
+    # Graphique des renards
+    plt.plot(time_real, renard_real, label='Renards (Réel)',
+             color='orange', linewidth=2)
+    plt.plot(time_real, renard_resized, label='Renards (Simulé)',
+             color='red', linestyle='--')
+
+    plt.xlabel('Temps')
+    plt.ylabel('Population')
+    plt.title('Comparaison des populations simulées et réelles')
+    plt.legend()
+    # plt.grid(True)
+    plt.show()

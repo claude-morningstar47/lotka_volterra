@@ -1,75 +1,46 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from lotka_func import load_csv_data, calculate_mse
+from lotka_func import load_csv_data, optimize_params, plot_results
 
-# Paramètres du modèle
-alpha = 1/3
-beta = 2/4
-delta = 1
-gamma = 1
-
-step = 0.001
-simulation_time = 100
-
-# Conditions initiales
-time = [0]
-lapin = [1]
-renard = [2]
-
-# Nombre d'itérations nécessaires
-n_iterations = int(simulation_time / step)
-
+# Charger les données depuis le fichier CSV
 data_file_path = 'populations_lapins_renards.csv'
 time_real, lapin_real, renard_real = load_csv_data(data_file_path)
 
-# Algorithme d'Euler
-for _ in range(n_iterations):
-    new_value_time = time[-1] + step
+# Paramètres du modèle
+# alpha_values = [1/3, 2/3, 1, 4/3]
+# beta_values = [1/3, 2/3, 1, 4/3]
+# delta_values = [1/3, 2/3, 1, 4/3]
+# gamma_values = [1/3, 2/3, 1, 4/3]
+alpha_values = [0.48111119]
+beta_values = [0.87111119]
+delta_values = [1.25]
+gamma_values = [1.24]
 
-    # Équations du modèle de Lotka-Volterra
-    dlapin_dt = alpha * lapin[-1] - beta * lapin[-1] * renard[-1]
-    drenard_dt = delta * lapin[-1] * renard[-1] - gamma * renard[-1]
+# Paramètres pour l'optimisation
+step = 0.00030
+simulation_time = len(time_real)
+n_iterations = 100_000
 
-    # Mise à jour des populations avec la méthode d'Euler
-    new_value_lapin = lapin[-1] + step * dlapin_dt
-    new_value_renard = renard[-1] + step * drenard_dt
+# Conditions initiales
+time = [0]
+lapin_sim = [1]
+renard_sim = [2]
 
-    # Ajout des nouvelles valeurs aux listes
-    time.append(new_value_time)
-    lapin.append(max(0, new_value_lapin))
-    renard.append(max(0, new_value_renard))
+# Optimiser les paramètres
+best_params, mse_params, lapin_resized, renard_resized, new_time = optimize_params(
+    lapin_real, renard_real, lapin_sim, renard_sim, time, step, n_iterations,
+    alpha_values, beta_values, delta_values, gamma_values
+)
 
-# Conversion en tableaux numpy pour l'efficacité
-time = np.array(time)
-lapin = np.array(lapin) * 1000
-renard = np.array(renard) * 1000
+# Extraire les meilleurs paramètres
+alpha, beta, delta, gamma = best_params
+lowest_mse, mse_lapin, mse_renard = mse_params
 
-# Redimensionnement des données simulées pour correspondre aux données réelles
-if len(lapin) > len(lapin_real):
-    step_ratio = len(lapin) // len(lapin_real)
-    lapin_resized = lapin[::step_ratio][:len(lapin_real)]
-    renard_resized = renard[::step_ratio][:len(renard_real)]
-else:
-    lapin_resized = lapin[:len(lapin_real)]
-    renard_resized = renard[:len(renard_real)]
+# Afficher les résultats de l'optimisation
+print(f"Meilleurs paramètres trouvés : alpha={alpha:.2f}, beta={
+      beta:.2f}, delta={delta:.2f}, gamma={gamma:.2f}")
+print(f'MSE Lapin: {mse_lapin:.2f}, MSE Renard: {mse_renard:.2f}')
+print(f"Erreur quadratique moyenne (MSE) : {lowest_mse:.2f}")
 
-# Calcul de l'erreur quadratique moyenne
-mse_lapin, mse_renard = calculate_mse(
-    lapin_real, renard_real, lapin_resized, renard_resized)
-
-print(f"Erreur quadratique moyenne (MSE) pour les lapins : {mse_lapin:.2f}")
-print(f"Erreur quadratique moyenne (MSE) pour les renards : {mse_renard:.2f}")
-
-# Affichage des résultats
-plt.figure(figsize=(15, 6))
-plt.plot(time, lapin, label='Proies - lapins (Simulés)', color='blue')
-plt.plot(time, renard, label='Prédateurs - renards (Simulés)', color='red')
-plt.scatter(time_real, lapin_real,
-            label='Proies - lapins (Réel)', color='cyan', s=10)
-plt.scatter(time_real, renard_real,
-            label='Prédateurs - renards (Réel)', color='orange', s=10)
-plt.xlabel('Temps')
-plt.ylabel('Population')
-plt.title('Évolution temporelle des populations')
-plt.legend()
-plt.show()
+# Visualiser les résultats
+plot_results(time_real, lapin_real, renard_real, lapin_resized, renard_resized)
